@@ -1,2 +1,2 @@
 // This file is kept for backwards compatibility
-require('./app');
+module.exports = require('./app');
