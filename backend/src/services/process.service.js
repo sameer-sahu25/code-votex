@@ -34,17 +34,17 @@ const createEvent = async (agentId, eventData) => {
   }
   if (KNOWN_RANSOMWARE_PATTERNS.some(pattern => 
     (processName || '').toLowerCase().includes(pattern)
-  ) {
+  )) {
     isSuspicious = true;
     suspicionReasons.push(`Known ransomware pattern in process name: ${processName}`);
   }
   if (cpuPercent > 85 && filesWrittenCount > 100) {
     isSuspicious = true;
-    suspicionReasons.push('High CPU + high file writes`);
+    suspicionReasons.push('High CPU + high file writes');
   }
   if (networkBytesSent > 10 * 1024 * 1024 && filesReadCount > 200) {
     isSuspicious = true;
-    suspicionReasons.push('Exfiltration pattern: high network bytes + high file reads`);
+    suspicionReasons.push('Exfiltration pattern: high network bytes + high file reads');
   }
 
   const processEvent = await ProcessEvent.create({
@@ -152,11 +152,20 @@ const getStats = async (agentId) => {
   const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
   const [
-    totalProcessesMonitored, suspiciousProcessesLast1h, allEvents] = await Promise.all([
-      ProcessEvent.count({ where: { agentId } }),
-      ProcessEvent.count({
-        where: { agentId, isSuspicious: true, observedAt: { [Op.gte]: oneHourAgo } }),
-      ProcessEvent.findAll({ where: { agentId } })]);
+    totalProcessesMonitored,
+    suspiciousProcessesLast1h,
+    allEvents
+  ] = await Promise.all([
+    ProcessEvent.count({ where: { agentId } }),
+    ProcessEvent.count({
+      where: {
+        agentId,
+        isSuspicious: true,
+        observedAt: { [Op.gte]: oneHourAgo }
+      }
+    }),
+    ProcessEvent.findAll({ where: { agentId } })
+  ]);
 
   const topProcessesByFileOps = [];
   const processOpCounts = {};
