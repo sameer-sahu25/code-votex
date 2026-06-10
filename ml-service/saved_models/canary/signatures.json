@@ -1,0 +1,1 @@
+{"rename_encrypt": ["read", "rename", "write", "encrypt"], "delete_after_read": ["read", "delete"], "mass_rename": ["rename", "rename", "rename"], "encrypt_attempt": ["encrypt"], "exfiltration": ["read", "read", "read", "write"]}
