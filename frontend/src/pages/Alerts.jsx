@@ -4,16 +4,47 @@ import { Search, CheckCircle, Bell, ShieldAlert } from "lucide-react"
 import Sidebar from "../components/Sidebar"
 import AlertCard from "../components/AlertCard"
 import PageWrapper from "../components/PageWrapper"
-import { mockAlerts } from "../data/mockData"
+import api from "../lib/api"
+import { io } from "socket.io-client"
 
 const FILTERS = ["all", "critical", "warning", "info"]
 
 export default function Alerts() {
+  const [alerts, setAlerts] = useState([])
   const [filter, setFilter] = useState("all")
   const [searchQuery, setSearchQuery] = useState("")
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     localStorage.getItem("sidebar-collapsed") === "true"
   )
+
+  const fetchAlerts = async () => {
+    try {
+      const data = await api.get("/alerts?limit=100")
+      setAlerts(data.alerts || [])
+    } catch (err) {
+      console.error("Failed to fetch alerts:", err)
+    }
+  }
+
+  useEffect(() => {
+    fetchAlerts()
+  }, [])
+
+  useEffect(() => {
+    const socketUrl = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.startsWith("http")
+      ? import.meta.env.VITE_BACKEND_URL.replace("/api/v1", "").replace("/api", "")
+      : "http://localhost:5000"
+
+    const socket = io(socketUrl, { transports: ["websocket"] })
+
+    socket.on("alert", (alert) => {
+      setAlerts((prev) => [alert, ...prev])
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [])
 
   useEffect(() => {
     const handleToggle = () => {
@@ -24,26 +55,29 @@ export default function Alerts() {
   }, [])
 
   const filteredAlerts = useMemo(() => {
-    return mockAlerts.filter((alert) => {
+    return alerts.filter((alert) => {
+      if (!alert) return false
       const matchesFilter = filter === "all" || alert.type === filter
       const matchesSearch =
         searchQuery === "" ||
-        alert.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        alert.processName.toLowerCase().includes(searchQuery.toLowerCase())
+        (alert.message && alert.message.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (alert.processName && alert.processName.toLowerCase().includes(searchQuery.toLowerCase()))
       return matchesFilter && matchesSearch
     })
-  }, [filter, searchQuery])
+  }, [alerts, filter, searchQuery])
 
   const alertCounts = useMemo(() => {
-    return mockAlerts.reduce(
+    return alerts.reduce(
       (acc, alert) => {
-        acc[alert.type]++
-        acc.all++
+        if (alert && alert.type && acc[alert.type] !== undefined) {
+          acc[alert.type]++
+          acc.all++
+        }
         return acc
       },
       { all: 0, critical: 0, warning: 0, info: 0 }
     )
-  }, [])
+  }, [alerts])
 
   return (
     <PageWrapper>

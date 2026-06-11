@@ -11,7 +11,11 @@ const CanaryFile = sequelize.define(
     },
     agentId: {
       type: DataTypes.UUID,
-      allowNull: false,
+      allowNull: true,
+    },
+    sessionId: {
+      type: DataTypes.UUID,
+      allowNull: true,
     },
     filePath: {
       type: DataTypes.TEXT,
@@ -20,6 +24,26 @@ const CanaryFile = sequelize.define(
     fileName: {
       type: DataTypes.STRING(255),
       allowNull: false,
+    },
+    directory: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    status: {
+      type: DataTypes.ENUM("safe", "touched"),
+      defaultValue: "safe",
+    },
+    touchedBy: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    touchedByPid: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    touchedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
     },
     fileHash: {
       type: DataTypes.STRING(64),

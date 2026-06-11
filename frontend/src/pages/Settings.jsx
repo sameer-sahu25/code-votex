@@ -4,6 +4,33 @@ import { Check, Settings as SettingsIcon, AlertTriangle, ShieldCheck, Terminal, 
 import Sidebar from "../components/Sidebar"
 import PageWrapper from "../components/PageWrapper"
 import { useToast } from "../context/ToastContext"
+import api from "../lib/api"
+
+const mapToBackend = (s) => ({
+  watchDirectories: s.watchDirs.split(",").map(d => d.trim()).filter(Boolean),
+  entropyThreshold: s.entropyThreshold,
+  threatScoreThreshold: s.threatThreshold,
+  filesPerMinThreshold: s.filesThreshold,
+  autoKillSwitch: s.autoKillSwitch,
+  emailAlerts: s.emailAlerts,
+  alertEmail: s.email,
+  canaryFilesPerDir: s.canaryPerDir,
+  autoStartMonitoring: s.autoStart,
+})
+
+const mapFromBackend = (b) => ({
+  enableMonitoring: true,
+  enableCanary: b.canaryFilesPerDir > 0,
+  autoStart: b.autoStartMonitoring,
+  entropyThreshold: b.entropyThreshold,
+  threatThreshold: b.threatScoreThreshold,
+  filesThreshold: b.filesPerMinThreshold,
+  autoKillSwitch: b.autoKillSwitch,
+  emailAlerts: b.emailAlerts,
+  email: b.alertEmail || "",
+  watchDirs: (b.watchDirectories || []).join(", "),
+  canaryPerDir: b.canaryFilesPerDir,
+})
 
 export default function Settings() {
   const [settings, setSettings] = useState({
@@ -38,16 +65,34 @@ export default function Settings() {
   }, [])
 
   useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const data = await api.get("/settings")
+        setSettings(mapFromBackend(data))
+        setTimeout(() => setIsInitialized(true), 100)
+      } catch (err) {
+        console.error("Failed to load settings:", err)
+        setIsInitialized(true)
+      }
+    }
+    loadSettings()
+  }, [])
+
+  useEffect(() => {
     if (!isInitialized) {
-      setIsInitialized(true)
       return
     }
     setHasUnsavedChanges(true)
-  }, [settings])
+  }, [settings, isInitialized])
 
-  const handleSave = () => {
-    setHasUnsavedChanges(false)
-    addToast("Configuration values successfully written to registry", "success")
+  const handleSave = async () => {
+    try {
+      await api.put("/settings", mapToBackend(settings))
+      setHasUnsavedChanges(false)
+      addToast("Configuration values successfully saved", "success")
+    } catch (err) {
+      addToast("Failed to save settings configuration", "danger")
+    }
   }
 
   const handleToggle = (key) => {
@@ -57,8 +102,13 @@ export default function Settings() {
     }))
   }
 
-  const handleClearAlerts = () => {
-    addToast("Audit log database cleared successfully", "info")
+  const handleClearAlerts = async () => {
+    try {
+      await api.delete("/alerts/clear")
+      addToast("Audit log database cleared successfully", "info")
+    } catch (err) {
+      addToast("Failed to clear database logs", "danger")
+    }
   }
 
   return (

@@ -4,8 +4,12 @@ const router = express.Router();
 const { MonitoringSession, Alert } = require("../models");
 const { validate, schemas } = require("../middleware/validate");
 const { redis, KEYS, EXPIRY } = require("../config/redis");
+const { requireAuth, attachUser } = require("../middleware/clerkAuth");
 const axios = require("axios");
 const logger = require("../config/logger");
+
+// Secure monitor endpoints with Clerk Auth middleware
+router.use(requireAuth, attachUser);
 
 router.get("/status", async (req, res, next) => {
   try {

@@ -20,39 +20,32 @@ import { Shield, Download, Calendar, Filter, Activity, BarChart2 } from "lucide-
 import Sidebar from "../components/Sidebar"
 import { useToast } from "../context/ToastContext"
 
-// Mock Data for Charts
-const attackTrendsData = [
-  { name: "Mon", threatsBlocked: 12, filesScanned: 840 },
-  { name: "Tue", threatsBlocked: 19, filesScanned: 1200 },
-  { name: "Wed", threatsBlocked: 3, filesScanned: 950 },
-  { name: "Thu", threatsBlocked: 5, filesScanned: 1100 },
-  { name: "Fri", threatsBlocked: 25, filesScanned: 1600 },
-  { name: "Sat", threatsBlocked: 8, filesScanned: 600 },
-  { name: "Sun", threatsBlocked: 14, filesScanned: 720 },
-]
-
-const threatDistributionData = [
-  { name: "Ransomware", value: 45, color: "#FF4D4D" }, // danger
-  { name: "Trojan", value: 25, color: "#FFD84D" }, // warning
-  { name: "Spyware", value: 15, color: "#B5FF4D" }, // accent
-  { name: "Adware", value: 15, color: "#4DFF91" }, // safe
-]
-
-const fileActivityData = [
-  { name: "00:00", reads: 400, writes: 240, deletes: 10 },
-  { name: "04:00", reads: 300, writes: 139, deletes: 50 },
-  { name: "08:00", reads: 900, writes: 780, deletes: 120 },
-  { name: "12:00", reads: 1200, writes: 980, deletes: 230 },
-  { name: "16:00", reads: 1100, writes: 1100, deletes: 190 },
-  { name: "20:00", reads: 700, writes: 590, deletes: 40 },
-]
+import api from "../lib/api"
 
 export default function Analytics() {
   const [timeRange, setTimeRange] = useState("7d")
+  const [attackTrends, setAttackTrends] = useState([])
+  const [threatDistribution, setThreatDistribution] = useState([])
+  const [fileActivity, setFileActivity] = useState([])
   const { addToast } = useToast()
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     localStorage.getItem("sidebar-collapsed") === "true"
   )
+
+  const fetchAnalyticsData = async () => {
+    try {
+      const data = await api.get(`/dashboard/analytics?range=${timeRange}`)
+      setAttackTrends(data.attackTrendsData || [])
+      setThreatDistribution(data.threatDistributionData || [])
+      setFileActivity(data.fileActivityData || [])
+    } catch (err) {
+      console.error("Failed to fetch analytics metrics:", err)
+    }
+  }
+
+  useEffect(() => {
+    fetchAnalyticsData()
+  }, [timeRange])
 
   useEffect(() => {
     const handleToggle = () => {
@@ -145,7 +138,7 @@ export default function Analytics() {
 
               <div className="h-[300px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={attackTrendsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <AreaChart data={attackTrends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                     <defs>
                       <linearGradient id="colorThreats" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#FF4D4D" stopOpacity={0.4} />
@@ -201,7 +194,7 @@ export default function Analytics() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={threatDistributionData}
+                      data={threatDistribution}
                       cx="50%"
                       cy="50%"
                       innerRadius={60}
@@ -209,7 +202,7 @@ export default function Analytics() {
                       paddingAngle={5}
                       dataKey="value"
                     >
-                      {threatDistributionData.map((entry, index) => (
+                      {threatDistribution.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -230,7 +223,7 @@ export default function Analytics() {
               </div>
 
               <div className="grid grid-cols-2 gap-2 mt-4">
-                {threatDistributionData.map((item, index) => (
+                {threatDistribution.map((item, index) => (
                   <div key={index} className="flex items-center gap-2">
                     <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
                     <span className="text-xs font-semibold text-white/80">{item.name} ({item.value}%)</span>
@@ -249,7 +242,7 @@ export default function Analytics() {
 
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={fileActivityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <BarChart data={fileActivity} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" />
                   <XAxis dataKey="name" stroke="#ffffff40" fontSize={11} tickLine={false} />
                   <YAxis stroke="#ffffff40" fontSize={11} tickLine={false} />

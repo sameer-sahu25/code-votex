@@ -36,6 +36,31 @@ app.add_middleware(
 
 app.include_router(api_router)
 
+from pydantic import BaseModel
+from typing import List
+from fastapi import Header, HTTPException
+from app.watcher.watcher_manager import watcher_manager
+
+class StartMonitoringRequest(BaseModel):
+    directories: List[str]
+    sessionId: str
+
+@app.post("/start")
+async def start_monitoring(request: StartMonitoringRequest, x_api_key: str = Header(None)):
+    expected_key = os.getenv("ML_API_KEY", "ransomwatch_secret_key_change_in_production")
+    if x_api_key != expected_key:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    watcher_manager.start_monitoring(request.directories, request.sessionId)
+    return {"status": "started", "sessionId": request.sessionId}
+
+@app.post("/stop")
+async def stop_monitoring(x_api_key: str = Header(None)):
+    expected_key = os.getenv("ML_API_KEY", "ransomwatch_secret_key_change_in_production")
+    if x_api_key != expected_key:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    watcher_manager.stop_monitoring()
+    return {"status": "stopped"}
+
 Instrumentator().instrument(app).expose(app)
 
 if __name__ == "__main__":

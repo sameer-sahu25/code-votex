@@ -8,14 +8,30 @@ const ThreatScore = require('./ThreatScore');
 const KillSwitchLog = require('./KillSwitchLog');
 const AuditLog = require('./AuditLog');
 
-// User associations
+// Session-based Simulator Models
+const MonitoringSession = require('./MonitoringSession');
+const Process = require('./Process');
+const FileEvent = require('./FileEvent');
+const Alert = require('./Alert');
+const Settings = require('./Settings');
+
+// --- User Associations ---
 User.hasMany(Agent, { foreignKey: 'userId' });
 Agent.belongsTo(User, { foreignKey: 'userId' });
 
 User.hasMany(AuditLog, { foreignKey: 'userId' });
 AuditLog.belongsTo(User, { foreignKey: 'userId' });
 
-// Agent associations
+User.hasMany(MonitoringSession, { foreignKey: 'userId' });
+MonitoringSession.belongsTo(User, { foreignKey: 'userId' });
+
+User.hasMany(Alert, { foreignKey: 'userId' });
+Alert.belongsTo(User, { foreignKey: 'userId' });
+
+User.hasOne(Settings, { foreignKey: 'userId' });
+Settings.belongsTo(User, { foreignKey: 'userId' });
+
+// --- Agent Associations ---
 Agent.hasMany(CanaryFile, { foreignKey: 'agentId' });
 CanaryFile.belongsTo(Agent, { foreignKey: 'agentId' });
 
@@ -37,14 +53,25 @@ KillSwitchLog.belongsTo(Agent, { foreignKey: 'agentId' });
 Agent.hasMany(AuditLog, { foreignKey: 'agentId' });
 AuditLog.belongsTo(Agent, { foreignKey: 'agentId' });
 
-// CanaryFile associations
+// --- Session-based Associations ---
+MonitoringSession.hasMany(Process, { foreignKey: 'sessionId' });
+Process.belongsTo(MonitoringSession, { foreignKey: 'sessionId' });
+
+MonitoringSession.hasMany(FileEvent, { foreignKey: 'sessionId' });
+FileEvent.belongsTo(MonitoringSession, { foreignKey: 'sessionId' });
+
+MonitoringSession.hasMany(Alert, { foreignKey: 'sessionId' });
+Alert.belongsTo(MonitoringSession, { foreignKey: 'sessionId' });
+
+MonitoringSession.hasMany(CanaryFile, { foreignKey: 'sessionId' });
+CanaryFile.belongsTo(MonitoringSession, { foreignKey: 'sessionId' });
+
+// --- Other Associations ---
 CanaryFile.hasMany(CanaryAlert, { foreignKey: 'canaryFileId' });
 CanaryAlert.belongsTo(CanaryFile, { foreignKey: 'canaryFileId' });
 
-// CanaryAlert associations
 CanaryAlert.belongsTo(User, { foreignKey: 'acknowledgedBy', as: 'acknowledger' });
 
-// KillSwitchLog associations
 KillSwitchLog.belongsTo(User, { foreignKey: 'triggeredByUserId', as: 'triggeredByUser' });
 
 module.exports = {
@@ -57,4 +84,9 @@ module.exports = {
   ThreatScore,
   KillSwitchLog,
   AuditLog,
+  MonitoringSession,
+  Process,
+  FileEvent,
+  Alert,
+  Settings,
 };

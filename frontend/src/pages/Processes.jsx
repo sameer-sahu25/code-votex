@@ -4,13 +4,48 @@ import { Search, Cpu, Activity, ShieldAlert, AlertTriangle } from "lucide-react"
 import Sidebar from "../components/Sidebar"
 import ProcessTable from "../components/ProcessTable"
 import PageWrapper from "../components/PageWrapper"
-import { mockProcesses } from "../data/mockData"
+import api from "../lib/api"
+import { io } from "socket.io-client"
 
 export default function Processes() {
+  const [processes, setProcesses] = useState([])
   const [searchQuery, setSearchQuery] = useState("")
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     localStorage.getItem("sidebar-collapsed") === "true"
   )
+
+  const fetchProcesses = async () => {
+    try {
+      const data = await api.get("/processes")
+      const mapped = (data.processes || []).map(p => ({
+        ...p,
+        name: p.processName || p.name
+      }))
+      setProcesses(mapped)
+    } catch (err) {
+      console.error("Failed to fetch processes:", err)
+    }
+  }
+
+  useEffect(() => {
+    fetchProcesses()
+  }, [])
+
+  useEffect(() => {
+    const socketUrl = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.startsWith("http")
+      ? import.meta.env.VITE_BACKEND_URL.replace("/api/v1", "").replace("/api", "")
+      : "http://localhost:5000"
+
+    const socket = io(socketUrl, { transports: ["websocket"] })
+
+    socket.on("threatScore", () => {
+      fetchProcesses()
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [])
 
   useEffect(() => {
     const handleToggle = () => {
@@ -21,12 +56,12 @@ export default function Processes() {
   }, [])
 
   const sortedProcesses = useMemo(() => {
-    return [...mockProcesses]
+    return [...processes]
       .sort((a, b) => b.threatScore - a.threatScore)
       .filter((p) =>
-        p.name.toLowerCase().includes(searchQuery.toLowerCase())
+        p.name && p.name.toLowerCase().includes(searchQuery.toLowerCase())
       )
-  }, [searchQuery])
+  }, [processes, searchQuery])
 
   const topSuspicious = sortedProcesses.filter(
     (p) => p.status !== "safe"

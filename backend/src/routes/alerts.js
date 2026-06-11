@@ -42,11 +42,16 @@ router.get("/", requireAuth, attachUser, async (req, res, next) => {
 
 router.post("/", mlAuth, async (req, res, next) => {
   try {
-    const alert = await Alert.create(req.body);
     const session = await MonitoringSession.findByPk(req.body.sessionId);
-    if (session) {
-      await session.increment("totalAlertsCount");
+    if (!session) {
+      return res.status(404).json({ error: "Session not found" });
     }
+    const alertData = {
+      ...req.body,
+      userId: session.userId,
+    };
+    const alert = await Alert.create(alertData);
+    await session.increment("totalAlertsCount");
     const io = req.app.get("io");
     io.to(`session:${req.body.sessionId}`).emit("alert", alert);
     if (req.body.type === "critical") {

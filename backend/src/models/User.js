@@ -17,7 +17,20 @@ const User = sequelize.define(
     },
     passwordHash: {
       type: DataTypes.STRING(255),
-      allowNull: false,
+      allowNull: true,
+    },
+    clerkId: {
+      type: DataTypes.STRING(255),
+      unique: true,
+      allowNull: true,
+    },
+    firstName: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+    },
+    lastName: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
     },
     role: {
       type: DataTypes.ENUM('admin', 'analyst', 'viewer'),

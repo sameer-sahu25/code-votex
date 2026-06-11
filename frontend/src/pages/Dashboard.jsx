@@ -11,12 +11,9 @@ import FileEventFeed from "../components/FileEventFeed"
 import CanaryStatus from "../components/CanaryStatus"
 import NetworkStatus from "../components/NetworkStatus"
 import ProcessTable from "../components/ProcessTable"
-import {
-  mockStats,
-  mockProcesses,
-  mockFileEvents,
-  mockCanaryFiles,
-} from "../data/mockData"
+import api from "../lib/api"
+import { io } from "socket.io-client"
+import { useToast } from "../context/ToastContext"
 
 const realTimeActivityData = [
   { name: "10:00", entropy: 3.4, systemIO: 180 },
@@ -28,15 +25,56 @@ const realTimeActivityData = [
 ]
 
 export default function Dashboard() {
-  const [threatScore, setThreatScore] = useState(mockStats.threatScore)
-  const [fileEvents, setFileEvents] = useState(mockFileEvents)
-  const [isMonitoringActive, setIsMonitoringActive] = useState(true)
+  const [stats, setStats] = useState({
+    filesMonitored: 0,
+    threatScore: 0,
+    activeProcesses: 0,
+    alertsToday: 0,
+    attacksStopped: 0,
+  })
+  const [threatScore, setThreatScore] = useState(0)
+  const [fileEvents, setFileEvents] = useState([])
+  const [canaryFiles, setCanaryFiles] = useState([])
+  const [processes, setProcesses] = useState([])
+  const [isMonitoringActive, setIsMonitoringActive] = useState(false)
   const [networkConnected, setNetworkConnected] = useState(true)
+  const { addToast } = useToast()
 
   // Listen to sidebar collapsible state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     localStorage.getItem("sidebar-collapsed") === "true"
   )
+
+  const fetchDashboardData = async () => {
+    try {
+      const statsData = await api.get("/dashboard/stats")
+      setStats({
+        filesMonitored: statsData.filesMonitored,
+        threatScore: statsData.threatScore,
+        activeProcesses: statsData.activeProcesses,
+        alertsToday: statsData.alertsToday,
+        attacksStopped: statsData.attacksStopped,
+      })
+      setThreatScore(statsData.threatScore)
+      setIsMonitoringActive(statsData.monitoringStatus === "active")
+      setNetworkConnected(statsData.networkStatus === "connected")
+      
+      const procData = await api.get("/processes")
+      setProcesses(procData.processes || [])
+
+      const canaryData = await api.get("/canary-session")
+      setCanaryFiles(canaryData || [])
+
+      const eventsData = await api.get("/files/events?limit=10")
+      setFileEvents(eventsData.events || [])
+    } catch (err) {
+      console.error("Error fetching dashboard data:", err)
+    }
+  }
+
+  useEffect(() => {
+    fetchDashboardData()
+  }, [])
 
   useEffect(() => {
     const handleToggle = () => {
@@ -47,41 +85,77 @@ export default function Dashboard() {
   }, [])
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setThreatScore((prev) => {
-        const change = Math.floor(Math.random() * 11) - 5
-        const newScore = Math.max(0, Math.min(100, prev + change))
-        return newScore
-      })
-    }, 3000)
+    const socketUrl = import.meta.env.VITE_BACKEND_URL && import.meta.env.VITE_BACKEND_URL.startsWith("http")
+      ? import.meta.env.VITE_BACKEND_URL.replace("/api/v1", "").replace("/api", "")
+      : "http://localhost:5000"
 
-    return () => clearInterval(interval)
+    const socket = io(socketUrl, { transports: ["websocket"] })
+
+    socket.on("monitoringStarted", () => {
+      setIsMonitoringActive(true)
+      addToast("Heuristics Engine Online", "success")
+      fetchDashboardData()
+    })
+
+    socket.on("monitoringStopped", () => {
+      setIsMonitoringActive(false)
+      addToast("Heuristics Engine Offline", "warning")
+      fetchDashboardData()
+    })
+
+    socket.on("networkStatus", (data) => {
+      setNetworkConnected(data.status === "connected")
+    })
+
+    socket.on("fileEvent", (event) => {
+      setFileEvents((prev) => [event, ...prev].slice(0, 10))
+      setStats((prev) => ({ ...prev, filesMonitored: prev.filesMonitored + 1 }))
+    })
+
+    socket.on("canaryTouched", (canary) => {
+      setCanaryFiles((prev) =>
+        prev.map((c) => (c.id === canary.id || c.filePath === canary.filePath ? canary : c))
+      )
+    })
+
+    socket.on("alert", (alert) => {
+      setStats((prev) => ({ ...prev, alertsToday: prev.alertsToday + 1 }))
+      addToast(alert.message, alert.type === "critical" ? "danger" : "warning")
+      fetchDashboardData()
+    })
+
+    socket.on("threatScore", (data) => {
+      setThreatScore(data.threatScore)
+    })
+
+    return () => {
+      socket.disconnect()
+    }
   }, [])
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const fakeFiles = [
-        "budget.xlsx",
-        "report.pdf",
-        "presentation.pptx",
-        "notes.txt",
-        "data.csv",
-      ]
-      const randomFile = fakeFiles[Math.floor(Math.random() * fakeFiles.length)]
-      const randomEntropy = (Math.random() * 8).toFixed(1)
-      const fakeEvent = {
-        id: Date.now(),
-        filePath: `C:/Users/test/documents/${randomFile}`,
-        eventType: "modified",
-        processName: Math.random() > 0.8 ? "suspicious.exe" : "system.exe",
-        entropyAfter: parseFloat(randomEntropy),
-        timestamp: new Date().toISOString(),
+  const handleToggleHeuristics = async () => {
+    try {
+      if (isMonitoringActive) {
+        await api.post("/monitor/stop")
+      } else {
+        await api.post("/monitor/start", { directories: ["./test_directory"] })
       }
-      setFileEvents((prev) => [fakeEvent, ...prev].slice(0, 10))
-    }, 5000)
+    } catch (err) {
+      addToast("Failed to toggle heuristics engine", "danger")
+    }
+  }
 
-    return () => clearInterval(interval)
-  }, [])
+  const handleToggleNetwork = async () => {
+    try {
+      if (networkConnected) {
+        await api.post("/network/isolate")
+      } else {
+        await api.post("/network/restore")
+      }
+    } catch (err) {
+      addToast("Failed to alter network state", "danger")
+    }
+  }
 
   return (
     <PageWrapper>
@@ -114,7 +188,7 @@ export default function Dashboard() {
             
             <div className="flex items-center gap-4">
               <button
-                onClick={() => setIsMonitoringActive(!isMonitoringActive)}
+                onClick={handleToggleHeuristics}
                 className={`px-5 py-2.5 rounded-full font-bold text-xs tracking-widest uppercase transition-all shadow-lg cursor-pointer ${
                   isMonitoringActive
                     ? "bg-danger text-white hover:bg-danger/90 shadow-danger/10 hover:shadow-danger/20"
@@ -130,7 +204,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatCard
               title="Protected Files"
-              value={mockStats.filesMonitored.toLocaleString()}
+              value={stats.filesMonitored.toLocaleString()}
               icon={Shield}
               cardType="white"
             />
@@ -142,13 +216,13 @@ export default function Dashboard() {
             />
             <StatCard
               title="Monitored Processes"
-              value={mockStats.activeProcesses}
+              value={stats.activeProcesses}
               icon={Cpu}
               cardType="dark"
             />
             <StatCard
               title="Alerts Resolved"
-              value={mockStats.alertsToday}
+              value={stats.alertsToday}
               icon={Bell}
               cardType="danger"
             />
@@ -206,11 +280,11 @@ export default function Dashboard() {
 
           {/* Canary Files & Kill Switch Row */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            <CanaryStatus canaryFiles={mockCanaryFiles} />
+            <CanaryStatus canaryFiles={canaryFiles} />
             <div className="space-y-6">
               <NetworkStatus
                 isConnected={networkConnected}
-                onToggle={() => setNetworkConnected(!networkConnected)}
+                onToggle={handleToggleNetwork}
               />
               <FileEventFeed events={fileEvents} />
             </div>
@@ -218,7 +292,7 @@ export default function Dashboard() {
 
           {/* Process Table Grid */}
           <div className="w-full">
-            <ProcessTable processes={mockProcesses} />
+            <ProcessTable processes={processes} />
           </div>
 
         </div>

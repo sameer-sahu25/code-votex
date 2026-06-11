@@ -12,7 +12,7 @@ ML_API_KEY = os.getenv("ML_API_KEY", "ransomwatch_secret_key_change_in_productio
 def send_alert(alert_data: dict):
     try:
         response = requests.post(
-            f"{BACKEND_URL}/api/alerts",
+            f"{BACKEND_URL}/api/v1/alerts",
             json=alert_data,
             headers={"x-api-key": ML_API_KEY}
         )
