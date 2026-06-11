@@ -20,8 +20,13 @@ const server = http.createServer(app);
 
 // Middleware
 app.use(helmet());
+
+const corsOrigins = process.env.FRONTEND_URL
+  ? process.env.FRONTEND_URL.split(",").map(url => url.trim())
+  : ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: corsOrigins,
   credentials: true,
 }));
 app.use(morgan('combined'));

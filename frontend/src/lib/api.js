@@ -6,9 +6,15 @@ const api = axios.create({
 })
 
 api.interceptors.request.use(async (config) => {
-  const token = await window.Clerk?.session?.getToken()
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`
+  try {
+    if (window.Clerk?.session) {
+      const token = await window.Clerk.session.getToken()
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to get Clerk token:", error)
   }
   return config
 })
