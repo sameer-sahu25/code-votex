@@ -9,185 +9,208 @@ const logger = require('../config/logger');
 const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:8000';
 
 const calculateThreatScore = async (agentId) => {
-  const now = new Date();
-  const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
-
-  // Step 1: Canary signal (0.45)
-  const activeCanaryAlerts = await CanaryAlert.count({
-    where: {
-      agentId,
-      isAcknowledged: false,
-      createdAt: { [Op.gte]: tenMinutesAgo }
-    }
-  });
-  let canaryScore = 0;
-  if (activeCanaryAlerts === 0) canaryScore = 0;
-  else if (activeCanaryAlerts === 1) canaryScore = 90;
-  else canaryScore = 100;
-
-  // Step 2: Entropy signal (0.30)
-  const entropyAnomalies = await EntropyEvent.findAll({
-    where: {
-      agentId,
-      isAnomaly: true,
-      sampledAt: { [Op.gte]: tenMinutesAgo }
-    }
-  });
-  const entropyAnomalyCount = entropyAnomalies.length;
-  const maxEntropyScore = entropyAnomalyCount > 0 
-    ? Math.max(...entropyAnomalies.map(e => parseFloat(e.entropyScore))) 
-    : 0;
-  const avgEntropyScore = entropyAnomalyCount > 0 
-    ? entropyAnomalies.reduce((sum, e) => sum + parseFloat(e.entropyScore), 0) / entropyAnomalyCount 
-    : 0;
-  
-  let entropyScore = 0;
-  if (entropyAnomalyCount === 0) entropyScore = 0;
-  else if (entropyAnomalyCount >= 1 && entropyAnomalyCount <= 3) {
-    entropyScore = 30 + (maxEntropyScore - 7.0) * 40;
-  } else if (entropyAnomalyCount >= 4 && entropyAnomalyCount <= 10) {
-    entropyScore = 60 + (entropyAnomalyCount * 4);
-  } else {
-    entropyScore = 100;
-  }
-  entropyScore = Math.min(100, Math.max(0, entropyScore));
-
-  // Step 3: Process signal (0.25)
-  const suspiciousProcs = await ProcessEvent.findAll({
-    where: {
-      agentId,
-      isSuspicious: true,
-      observedAt: { [Op.gte]: tenMinutesAgo }
-    }
-  });
-  const suspiciousCount = suspiciousProcs.length;
-  const maxOpsPerMin = suspiciousCount > 0 
-    ? Math.max(...suspiciousProcs.map(p => parseFloat(p.operationsPerMin || 0))) 
-    : 0;
-  
-  let processScore = 0;
-  if (suspiciousCount === 0) processScore = 0;
-  else if (maxOpsPerMin < 100) processScore = 20;
-  else if (maxOpsPerMin >= 100 && maxOpsPerMin <= 300) processScore = 50;
-  else if (maxOpsPerMin > 300 && maxOpsPerMin <= 500) processScore = 70;
-  else processScore = 90;
-  processScore += (suspiciousCount * 2);
-  processScore = Math.min(100, processScore);
-
-  // Step 4: Weighted combination
-  const ruleBasedScore = Math.round(
-    (canaryScore * 0.45) + (entropyScore * 0.30) + (processScore * 0.25)
-  );
-
-  let mlAdjustedScore = ruleBasedScore;
-  let mlConfidence = 0.0;
-  let mlDelta = 0;
-
+  const startTime = new Date();
+  logger.info(`[THREAT] Starting threat evaluation for agent ${agentId}`);
   try {
-    const lastAlert = await CanaryAlert.findOne({
-      where: { agentId },
-      order: [['createdAt', 'DESC']]
-    });
-    const timeSinceLastAlertMinutes = lastAlert 
-      ? (now - lastAlert.createdAt) / (1000 * 60) 
-      : 10000;
+    const now = new Date();
+    const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
 
-    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-    const sevenDayScores = await ThreatScore.findAll({
-      where: { agentId, calculatedAt: { [Op.gte]: sevenDaysAgo } },
-      attributes: ['score']
-    });
-    const historicalAvg7d = sevenDayScores.length > 0 
-      ? sevenDayScores.reduce((sum, s) => sum + s.score, 0) / sevenDayScores.length 
-      : 0;
-
-    const mlRequest = {
-      agentId,
-      ruleBasedScore,
-      canaryAlertCount: activeCanaryAlerts,
-      entropyAnomalyCount,
-      maxEntropyScore,
-      avgEntropyScore,
-      suspiciousProcessCount: suspiciousCount,
-      maxOpsPerMinute: maxOpsPerMin,
-      filesRenamedTotal: suspiciousProcs.reduce((sum, p) => sum + (p.filesRenamedCount || 0), 0),
-      filesDeletedTotal: suspiciousProcs.reduce((sum, p) => sum + (p.filesDeletedCount || 0), 0),
-      networkBytesSentTotal: suspiciousProcs.reduce((sum, p) => sum + (p.networkBytesSent || 0), 0),
-      hourOfDay: now.getHours(),
-      dayOfWeek: now.getDay(),
-      agentBaselineDeviation: 0.0,
-      historicalAvgScore7d: historicalAvg7d,
-      timeSinceLastAlertMinutes
-    };
-
-    const mlResponse = await axios.post(`${ML_SERVICE_URL}/ml/v1/threat/adjust`, mlRequest);
-    mlAdjustedScore = mlResponse.data.adjustedScore;
-    mlDelta = mlResponse.data.delta;
-    mlConfidence = mlResponse.data.confidence;
-  } catch (err) {
-    console.error('ML service request failed:', err.message);
-  }
-
-  // Step 5: Verdict
-  let verdict = 'safe';
-  if (mlAdjustedScore >= 80) verdict = 'ransomware';
-  else if (mlAdjustedScore >= 60) verdict = 'dangerous';
-  else if (mlAdjustedScore >= 30) verdict = 'suspicious';
-
-  // Step 6: Persist and emit
-  const threatScore = await ThreatScore.create({
-    agentId,
-    score: mlAdjustedScore,
-    verdict,
-    canaryScore,
-    entropyScore,
-    processScore,
-    canaryWeight: 0.45,
-    entropyWeight: 0.30,
-    processWeight: 0.25,
-    activeCanaryAlerts,
-    activeEntropyAnomalies: entropyAnomalyCount,
-    activeSuspiciousProcs: suspiciousCount,
-    triggerDetails: {
-      mlAdjustedScore,
-      mlDelta,
-      mlConfidence,
-      ruleBasedScore,
-      breakdown: {
-        canary: { score: canaryScore, weight: 0.45 },
-        entropy: { score: entropyScore, weight: 0.30 },
-        process: { score: processScore, weight: 0.25 }
+    // Step 1: Canary signal (0.45)
+    const activeCanaryAlerts = await CanaryAlert.count({
+      where: {
+        agentId,
+        isAcknowledged: false,
+        createdAt: { [Op.gte]: tenMinutesAgo }
       }
-    },
-    calculatedAt: now
-  });
-
-  // Emit socket event
-  if (alertService) {
-    alertService.emitThreatScoreUpdate(agentId, threatScore);
-  }
-
-  // Auto-trigger kill switch if score >= 80
-  if (mlAdjustedScore >= 80) {
-    const lastKillSwitch = await KillSwitchLog.findOne({
-      where: { agentId },
-      order: [['createdAt', 'DESC']]
     });
-    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
-    const shouldTrigger = !lastKillSwitch || 
-      lastKillSwitch.createdAt < fiveMinutesAgo || 
-      lastKillSwitch.action !== 'isolated';
+    let canaryScore = 0;
+    if (activeCanaryAlerts === 0) canaryScore = 0;
+    else if (activeCanaryAlerts === 1) canaryScore = 90;
+    else canaryScore = 100;
+
+    // Step 2: Entropy signal (0.30)
+    const entropyAnomalies = await EntropyEvent.findAll({
+      where: {
+        agentId,
+        isAnomaly: true,
+        sampledAt: { [Op.gte]: tenMinutesAgo }
+      }
+    });
+    const entropyAnomalyCount = entropyAnomalies.length;
+    const maxEntropyScore = entropyAnomalyCount > 0 
+      ? Math.max(...entropyAnomalies.map(e => parseFloat(e.entropyScore))) 
+      : 0;
+    const avgEntropyScore = entropyAnomalyCount > 0 
+      ? entropyAnomalies.reduce((sum, e) => sum + parseFloat(e.entropyScore), 0) / entropyAnomalyCount 
+      : 0;
     
-    if (shouldTrigger) {
-      try {
-        await killswitchService.triggerKillSwitch(agentId, 'auto', null, mlAdjustedScore);
-      } catch (err) {
-        console.error('Failed to auto-trigger kill switch:', err.message);
+    let entropyScore = 0;
+    if (entropyAnomalyCount === 0) entropyScore = 0;
+    else if (entropyAnomalyCount >= 1 && entropyAnomalyCount <= 3) {
+      entropyScore = 30 + (maxEntropyScore - 7.0) * 40;
+    } else if (entropyAnomalyCount >= 4 && entropyAnomalyCount <= 10) {
+      entropyScore = 60 + (entropyAnomalyCount * 4);
+    } else {
+      entropyScore = 100;
+    }
+    entropyScore = Math.min(100, Math.max(0, entropyScore));
+
+    // Step 3: Process signal (0.25)
+    const suspiciousProcs = await ProcessEvent.findAll({
+      where: {
+        agentId,
+        isSuspicious: true,
+        observedAt: { [Op.gte]: tenMinutesAgo }
+      }
+    });
+    const suspiciousCount = suspiciousProcs.length;
+    const maxOpsPerMin = suspiciousCount > 0 
+      ? Math.max(...suspiciousProcs.map(p => parseFloat(p.operationsPerMin || 0))) 
+      : 0;
+    
+    let processScore = 0;
+    if (suspiciousCount === 0) processScore = 0;
+    else if (maxOpsPerMin < 100) processScore = 20;
+    else if (maxOpsPerMin >= 100 && maxOpsPerMin <= 300) processScore = 50;
+    else if (maxOpsPerMin > 300 && maxOpsPerMin <= 500) processScore = 70;
+    else processScore = 90;
+    processScore += (suspiciousCount * 2);
+    processScore = Math.min(100, processScore);
+
+    // Step 4: Weighted combination
+    const ruleBasedScore = Math.round(
+      (canaryScore * 0.45) + (entropyScore * 0.30) + (processScore * 0.25)
+    );
+
+    let mlAdjustedScore = ruleBasedScore;
+    let mlConfidence = 0.0;
+    let mlDelta = 0;
+
+    try {
+      const lastAlert = await CanaryAlert.findOne({
+        where: { agentId },
+        order: [['createdAt', 'DESC']]
+      });
+      const timeSinceLastAlertMinutes = lastAlert 
+        ? (now - lastAlert.createdAt) / (1000 * 60) 
+        : 10000;
+
+      const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const sevenDayScores = await ThreatScore.findAll({
+        where: { agentId, calculatedAt: { [Op.gte]: sevenDaysAgo } },
+        attributes: ['score']
+      });
+      const historicalAvg7d = sevenDayScores.length > 0 
+        ? sevenDayScores.reduce((sum, s) => sum + s.score, 0) / sevenDayScores.length 
+        : 0;
+
+      const mlRequest = {
+        agent_id: agentId,
+        rule_based_score: ruleBasedScore,
+        canary_alert_count: activeCanaryAlerts,
+        entropy_anomaly_count: entropyAnomalyCount,
+        max_entropy_score: maxEntropyScore,
+        avg_entropy_score: avgEntropyScore,
+        suspicious_process_count: suspiciousCount,
+        max_ops_per_minute: maxOpsPerMin,
+        files_renamed_total: suspiciousProcs.reduce((sum, p) => sum + (p.filesRenamedCount || 0), 0),
+        files_deleted_total: suspiciousProcs.reduce((sum, p) => sum + (p.filesDeletedCount || 0), 0),
+        network_bytes_sent_total: suspiciousProcs.reduce((sum, p) => sum + (p.networkBytesSent || 0), 0),
+        hour_of_day: now.getHours(),
+        day_of_week: now.getDay(),
+        agent_baseline_deviation: 0.0,
+        historical_avg_score_7d: historicalAvg7d,
+        time_since_last_alert_minutes: timeSinceLastAlertMinutes
+      };
+
+      logger.info(`[ML] Sending request to ML service at ${ML_SERVICE_URL}/ml/v1/threat/adjust`, mlRequest);
+      const mlStartTime = Date.now();
+      const mlResponse = await axios.post(`${ML_SERVICE_URL}/ml/v1/threat/adjust`, mlRequest);
+      const mlEndTime = Date.now();
+      logger.info(`[ML] Received response from ML service in ${mlEndTime - mlStartTime}ms`, mlResponse.data);
+      
+      mlAdjustedScore = mlResponse.data.adjusted_score;
+      mlDelta = mlResponse.data.delta;
+      mlConfidence = mlResponse.data.confidence;
+    } catch (err) {
+      logger.error(`[ML] ML service request failed: ${err.message}`, { 
+        agentId, 
+        url: `${ML_SERVICE_URL}/ml/v1/threat/adjust`,
+        errorDetails: err.response ? err.response.data : null
+      });
+    }
+
+    // Step 5: Verdict
+    let verdict = 'safe';
+    if (mlAdjustedScore >= 80) verdict = 'ransomware';
+    else if (mlAdjustedScore >= 60) verdict = 'dangerous';
+    else if (mlAdjustedScore >= 30) verdict = 'suspicious';
+
+    // Step 6: Persist and emit
+    const threatScore = await ThreatScore.create({
+      agentId,
+      score: mlAdjustedScore,
+      verdict,
+      canaryScore,
+      entropyScore,
+      processScore,
+      canaryWeight: 0.45,
+      entropyWeight: 0.30,
+      processWeight: 0.25,
+      activeCanaryAlerts,
+      activeEntropyAnomalies: entropyAnomalyCount,
+      activeSuspiciousProcs: suspiciousCount,
+      triggerDetails: {
+        mlAdjustedScore,
+        mlDelta,
+        mlConfidence,
+        ruleBasedScore,
+        breakdown: {
+          canary: { score: canaryScore, weight: 0.45 },
+          entropy: { score: entropyScore, weight: 0.30 },
+          process: { score: processScore, weight: 0.25 }
+        }
+      },
+      calculatedAt: now
+    });
+
+    const duration = new Date() - startTime;
+    logger.info(`[THREAT] Completed threat evaluation for agent ${agentId} in ${duration}ms`, {
+      agentId,
+      score: mlAdjustedScore,
+      verdict
+    });
+
+    // Emit socket event
+    if (alertService) {
+      alertService.emitThreatScoreUpdate(agentId, threatScore);
+    }
+
+    // Auto-trigger kill switch if score >= 80
+    if (mlAdjustedScore >= 80) {
+      const lastKillSwitch = await KillSwitchLog.findOne({
+        where: { agentId },
+        order: [['createdAt', 'DESC']]
+      });
+      const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+      const shouldTrigger = !lastKillSwitch || 
+        lastKillSwitch.createdAt < fiveMinutesAgo || 
+        lastKillSwitch.action !== 'isolated';
+      
+      if (shouldTrigger) {
+        try {
+          await killswitchService.triggerKillSwitch(agentId, 'auto', null, mlAdjustedScore);
+        } catch (err) {
+          logger.error('Failed to auto-trigger kill switch:', err.message);
+        }
       }
     }
-  }
 
-  return threatScore;
+    return threatScore;
+  } catch (err) {
+    logger.error(`[THREAT] Failed threat evaluation for agent ${agentId}`, err.message);
+    throw err;
+  }
 };
 
 const getThreatScores = async (agentId, hours = 24, page = 1, limit = 20) => {
@@ -258,14 +281,14 @@ const getDashboardStats = async (userId, role) => {
   const [
     totalAgents,
     onlineAgents,
-    quarantinedAgents,
+    isolatedAgents,
     criticalAlerts,
     recentAnomalies,
     allThreatScores
   ] = await Promise.all([
     Agent.count({ where: agentWhere }),
     Agent.count({ where: { ...agentWhere, status: 'online' } }),
-    Agent.count({ where: { ...agentWhere, status: 'quarantined' } }),
+    Agent.count({ where: { ...agentWhere, status: 'isolated' } }),
     CanaryAlert.findAll({
       where: { agentId: { [Op.in]: agentIds }, isAcknowledged: false },
       include: [Agent],
@@ -288,7 +311,7 @@ const getDashboardStats = async (userId, role) => {
   const activeThreats = allThreatScores.filter(s => s.score >= 60);
   const uniqueActiveThreats = [];
   const seenAgents = new Set();
-  for (const s of activeThreatScores) {
+  for (const s of activeThreats) {
     if (!seenAgents.has(s.agentId)) {
       seenAgents.add(s.agentId);
       uniqueActiveThreats.push(s);
@@ -313,7 +336,7 @@ const getDashboardStats = async (userId, role) => {
   return {
     totalAgents,
     onlineAgents,
-    quarantinedAgents,
+    isolatedAgents,
     activeThreats: uniqueActiveThreats,
     criticalAlerts,
     recentAnomalies,

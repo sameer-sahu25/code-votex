@@ -4,7 +4,7 @@ const logger = require('../config/logger');
 
 const runThreatEvaluator = async () => {
   try {
-    const agents = await Agent.findAll({ where: { status: { [require('sequelize').Op.ne]: 'quarantined' } } });
+    const agents = await Agent.findAll({ where: { status: { [require('sequelize').Op.ne]: 'isolated' } } });
 
     for (const agent of agents) {
       try {

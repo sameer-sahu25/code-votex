@@ -16,7 +16,7 @@ const triggerKillSwitch = async (agentId, triggeredBy, triggeredByUserId, threat
     throw new Error('Threat score too low to trigger kill switch');
   }
 
-  await agent.update({ status: 'quarantined' });
+  await agent.update({ status: 'isolated' });
 
   const killSwitchLog = await KillSwitchLog.create({
     agentId,
@@ -30,7 +30,7 @@ const triggerKillSwitch = async (agentId, triggeredBy, triggeredByUserId, threat
   });
 
   alertService.emitKillSwitchTriggered(agentId, killSwitchLog);
-  alertService.emitAgentStatus(agentId, 'quarantined');
+  alertService.emitAgentStatus(agentId, 'isolated');
 
   return killSwitchLog;
 };
