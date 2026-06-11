@@ -2,7 +2,6 @@
 const express = require("express");
 const router = express.Router();
 const { Settings } = require("../models");
-const { validate, schemas } = require("../middleware/validate");
 const { requireAuth, attachUser } = require("../middleware/clerkAuth");
 
 router.use(requireAuth, attachUser);
@@ -23,7 +22,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.put("/", validate(schemas.updateSettings), async (req, res, next) => {
+router.put("/", async (req, res, next) => {
   try {
     let settings = await Settings.findOne({
       where: { userId: req.user.id },

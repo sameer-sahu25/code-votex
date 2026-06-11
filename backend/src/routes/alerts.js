@@ -4,7 +4,6 @@ const router = express.Router();
 const { Op } = require("sequelize");
 const { sequelize } = require("../config/database");
 const { Alert, MonitoringSession } = require("../models");
-const { validate, schemas } = require("../middleware/validate");
 const { requireAuth, attachUser } = require("../middleware/clerkAuth");
 const mlAuth = require("../middleware/mlAuth");
 const { redis, KEYS, EXPIRY } = require("../config/redis");
@@ -41,7 +40,7 @@ router.get("/", requireAuth, attachUser, async (req, res, next) => {
   }
 });
 
-router.post("/", mlAuth, validate(schemas.createAlert), async (req, res, next) => {
+router.post("/", mlAuth, async (req, res, next) => {
   try {
     const alert = await Alert.create(req.body);
     const session = await MonitoringSession.findByPk(req.body.sessionId);

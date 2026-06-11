@@ -115,23 +115,33 @@ export default function Dashboard() {
       let riskScore = 0
       let riskMessage = "File appears normal"
 
-      if (entropy > 7.5) {
+      const isCommonCompressed = /\.(zip|7z|rar|jpg|jpeg|png|gif|pdf|docx|xlsx|pptx|exe|dll|sys)$/i.test(file.name)
+
+      if (entropy > 7.98) {
         riskLevel = "critical"
-        riskScore = 90
-        riskMessage = "HIGH RISK: File appears to be encrypted (ransomware detected!). High entropy values are characteristic of encrypted or compressed data."
-      } else if (entropy > 7.0) {
+        riskScore = 98
+        riskMessage = "CRITICAL: Maximum entropy detected. This is almost certainly encrypted data typical of ransomware."
+      } else if (entropy > 7.92) {
         riskLevel = "high"
-        riskScore = 70
-        riskMessage = "Suspicious: High entropy detected - possible encryption. This is common in packed executables or encrypted archives."
-      } else if (entropy > 5.0) {
+        riskScore = 75
+        riskMessage = isCommonCompressed 
+          ? "Suspicious: Very high entropy for this file type. Unusual even for compressed data."
+          : "High Risk: High entropy detected in a non-standard format. Highly suspicious."
+      } else if (entropy > 7.5) {
         riskLevel = "medium"
-        riskScore = 40
-        riskMessage = "Moderate: Elevated entropy level. Typical for some compressed formats or media files."
+        riskScore = 35
+        riskMessage = "Safe/Normal: High entropy typical for modern high-compression formats and media."
       } else {
         riskLevel = "low"
-        riskScore = 10
-        riskMessage = "Safe: Normal entropy level. Typical for text files and standard documents."
+        riskScore = 5
+        riskMessage = "Safe: Standard entropy level for documents, code, and uncompressed data."
       }
+
+      // Re-adjusting riskLevel for UI consistency based on score
+      if (riskScore >= 90) riskLevel = "critical"
+      else if (riskScore >= 70) riskLevel = "high"
+      else if (riskScore >= 30) riskLevel = "medium"
+      else riskLevel = "low"
 
       setFileResult({
         fileName: file.name,
