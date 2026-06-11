@@ -58,15 +58,15 @@ export default function Terminal() {
       </div>
       <div className="p-4 font-mono text-sm">
         <div className="space-y-1 min-h-[200px]">
-          {visibleLines.map((line, index) => (
+          {visibleLines.filter(Boolean).map((line, index) => (
             <motion.div
               key={index}
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
-              className={getLineColor(line.type)}
+              className={getLineColor(line?.type || "info")}
             >
-              {line.text}
+              {line?.text || ""}
             </motion.div>
           ))}
           <motion.span
