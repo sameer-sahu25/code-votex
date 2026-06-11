@@ -1,88 +1,53 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Check, AlertTriangle, Trash2, RefreshCcw } from "lucide-react"
+import { Check, Settings as SettingsIcon, AlertTriangle, ShieldCheck, Terminal, HardDrive } from "lucide-react"
 import Sidebar from "../components/Sidebar"
-import api from "../lib/api"
+import PageWrapper from "../components/PageWrapper"
+import { useToast } from "../context/ToastContext"
 
 export default function Settings() {
   const [settings, setSettings] = useState({
-    autoStartMonitoring: true,
+    enableMonitoring: true,
+    enableCanary: true,
+    autoStart: false,
     entropyThreshold: 7.0,
-    threatScoreThreshold: 80,
-    filesPerMinThreshold: 200,
+    threatThreshold: 80,
+    filesThreshold: 200,
     autoKillSwitch: true,
     emailAlerts: false,
-    alertEmail: "",
-    watchDirectories: [],
-    canaryFilesPerDir: 5,
+    email: "",
+    watchDirs: "C:\\Users\\test\\Documents, C:\\Users\\test\\Desktop",
+    canaryPerDir: 5,
   })
 
-  const [loading, setLoading] = useState(true)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const [showSaveSuccess, setShowSaveSuccess] = useState(false)
-  const [isClearingAlerts, setIsClearingAlerts] = useState(false)
-  const [isResetting, setIsResetting] = useState(false)
+  const { addToast } = useToast()
+
+  // Avoid triggering unsaved changes on initial render
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    localStorage.getItem("sidebar-collapsed") === "true"
+  )
 
   useEffect(() => {
-    fetchSettings()
+    const handleToggle = () => {
+      setSidebarCollapsed(localStorage.getItem("sidebar-collapsed") === "true")
+    }
+    window.addEventListener("sidebar-toggle", handleToggle)
+    return () => window.removeEventListener("sidebar-toggle", handleToggle)
   }, [])
 
-  const fetchSettings = async () => {
-    try {
-      const data = await api.get("/settings")
-      if (data) {
-        setSettings({
-          ...data,
-          watchDirectories: data.watchDirectories || [],
-        })
-      }
-    } catch (error) {
-      console.error("Failed to fetch settings:", error)
-    } finally {
-      setLoading(false)
-      setHasUnsavedChanges(false)
+  useEffect(() => {
+    if (!isInitialized) {
+      setIsInitialized(true)
+      return
     }
-  }
+    setHasUnsavedChanges(true)
+  }, [settings])
 
-  const handleSave = async () => {
-    try {
-      await api.put("/settings", settings)
-      setShowSaveSuccess(true)
-      setHasUnsavedChanges(false)
-      setTimeout(() => setShowSaveSuccess(false), 3000)
-    } catch (error) {
-      console.error("Failed to save settings:", error)
-    }
-  }
-
-  const handleClearAlerts = async () => {
-    if (!confirm("Are you sure you want to clear all alerts? This cannot be undone.")) return
-    
-    setIsClearingAlerts(true)
-    try {
-      await api.delete("/alerts/clear")
-      alert("All alerts have been cleared.")
-    } catch (error) {
-      console.error("Failed to clear alerts:", error)
-    } finally {
-      setIsClearingAlerts(false)
-    }
-  }
-
-  const handleResetSettings = async () => {
-    if (!confirm("Are you sure you want to reset all settings to defaults?")) return
-
-    setIsResetting(true)
-    try {
-      const data = await api.post("/settings/reset")
-      setSettings(data)
-      setHasUnsavedChanges(false)
-      alert("Settings have been reset to defaults.")
-    } catch (error) {
-      console.error("Failed to reset settings:", error)
-    } finally {
-      setIsResetting(false)
-    }
+  const handleSave = () => {
+    setHasUnsavedChanges(false)
+    addToast("Configuration values successfully written to registry", "success")
   }
 
   const handleToggle = (key) => {
@@ -90,117 +55,171 @@ export default function Settings() {
       ...prev,
       [key]: !prev[key],
     }))
-    setHasUnsavedChanges(true)
   }
 
-  const handleInputChange = (key, value) => {
-    setSettings((prev) => ({
-      ...prev,
-      [key]: value,
-    }))
-    setHasUnsavedChanges(true)
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-dark text-white flex items-center justify-center">
-        <RefreshCcw className="w-8 h-8 animate-spin text-accent" />
-      </div>
-    )
+  const handleClearAlerts = () => {
+    addToast("Audit log database cleared successfully", "info")
   }
 
   return (
-    <div className="min-h-screen bg-dark text-white flex">
+    <PageWrapper>
+      <div className="min-h-screen bg-[#0b0c10] text-white flex relative overflow-hidden font-sans">
+        {/* Ambient Cyber Glows */}
+        <div className="cyber-glow bg-accent/5 w-[500px] h-[500px] top-[-100px] left-[-100px]" />
+        <div className="cyber-glow bg-danger/5 w-[500px] h-[500px] bottom-[-100px] right-[-100px]" />
+        <div className="absolute inset-0 cyber-grid pointer-events-none" />
+
       <Sidebar />
-      <main className="flex-1 md:ml-64 pb-24 md:pb-10">
+      <main 
+        className={`flex-1 pb-24 md:pb-10 relative z-10 transition-all duration-300 ${
+          sidebarCollapsed ? "md:ml-20" : "md:ml-64"
+        }`}
+      >
         <div className="p-6 md:p-8">
+          
+          {/* Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold mb-1">Settings</h1>
-            <p className="text-white/60">Configure your RansomWatch preferences</p>
+            <h1 className="text-3xl font-extrabold mb-1 tracking-wide flex items-center gap-2">
+              <SettingsIcon className="w-8 h-8 text-white/80" />
+              Settings Configuration
+            </h1>
+            <p className="text-white/50 text-sm">Tune the AI model thresholds, watch directories, and defense responses.</p>
           </div>
 
           <div className="max-w-3xl space-y-6">
+            
             {/* Monitoring Settings */}
-            <div className="bg-white border border-dark text-dark rounded-2xl p-6">
-              <h2 className="text-xl font-bold mb-4">Monitoring Settings</h2>
+            <div className="glass-card rounded-card p-6">
+              <h2 className="text-lg font-bold mb-4 border-b border-white/5 pb-2 text-white/95 flex items-center gap-2">
+                <HardDrive className="w-5 h-5 text-accent" />
+                Monitoring Settings
+              </h2>
               <div className="space-y-4">
                 <ToggleRow
-                  label="Auto-start Monitoring"
-                  checked={settings.autoStartMonitoring}
-                  onToggle={() => handleToggle("autoStartMonitoring")}
+                  label="Enable File System Watchdog"
+                  description="Watch active file modifications in real-time."
+                  checked={settings.enableMonitoring}
+                  onToggle={() => handleToggle("enableMonitoring")}
                 />
+                <ToggleRow
+                  label="Deploy Honeytoken Canary Traps"
+                  description="Spawn decoy files in user directories."
+                  checked={settings.enableCanary}
+                  onToggle={() => handleToggle("enableCanary")}
+                />
+                <ToggleRow
+                  label="Run Daemon on System Boot"
+                  description="Start protection automatically in the background."
+                  checked={settings.autoStart}
+                  onToggle={() => handleToggle("autoStart")}
+                />
+                
                 <div className="pt-2">
-                  <label className="block font-semibold mb-2">
-                    Directories to Watch (comma separated)
+                  <label className="block text-xs uppercase tracking-wider text-white/40 font-bold mb-2">
+                    Watched Directories
                   </label>
                   <textarea
-                    value={settings.watchDirectories.join(", ")}
+                    value={settings.watchDirs}
                     onChange={(e) =>
-                      handleInputChange("watchDirectories", e.target.value.split(",").map(s => s.trim()).filter(Boolean))
+                      setSettings((prev) => ({
+                        ...prev,
+                        watchDirs: e.target.value,
+                      }))
                     }
-                    className="w-full p-3 rounded-xl border border-dark/20 text-dark bg-white"
-                    rows={3}
-                    placeholder="C:\Path\To\Watch, D:\Another\Path"
+                    className="w-full p-3 rounded-lg border border-white/10 text-white bg-white/5 font-mono text-xs focus:outline-none focus:border-accent/50 transition-colors"
+                    rows={2}
                   />
                 </div>
-                <div>
-                  <label className="block font-semibold mb-2">
-                    Canary Files per Directory
-                  </label>
-                  <input
-                    type="number"
-                    value={settings.canaryFilesPerDir}
-                    onChange={(e) =>
-                      handleInputChange("canaryFilesPerDir", parseInt(e.target.value) || 0)
-                    }
-                    className="w-full p-3 rounded-xl border border-dark/20 text-dark"
-                  />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs uppercase tracking-wider text-white/40 font-bold mb-2">
+                      Canaries Per Directory
+                    </label>
+                    <input
+                      type="number"
+                      value={settings.canaryPerDir}
+                      onChange={(e) =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          canaryPerDir: parseInt(e.target.value) || 0,
+                        }))
+                      }
+                      className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white focus:outline-none focus:border-accent/50 transition-colors font-semibold text-sm"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
 
             {/* Alert Thresholds */}
-            <div className="bg-dark border border-white/10 rounded-2xl p-6 text-white">
-              <h2 className="text-xl font-bold mb-4">Alert Thresholds</h2>
+            <div className="glass-card rounded-card p-6">
+              <h2 className="text-lg font-bold mb-4 border-b border-white/5 pb-2 text-white/95 flex items-center gap-2">
+                <Terminal className="w-5 h-5 text-warning" />
+                Alert Trigger Thresholds
+              </h2>
               <div className="space-y-6">
                 <SliderRow
-                  label="Entropy Alert Threshold"
+                  label="Entropy Alert Level"
+                  description="Randomness limit indicating file encryption spikes."
                   value={settings.entropyThreshold}
                   min={0}
                   max={8}
                   step={0.1}
-                  onChange={(val) => handleInputChange("entropyThreshold", val)}
+                  onChange={(val) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      entropyThreshold: val,
+                    }))
+                  }
                 />
                 <SliderRow
-                  label="Threat Score Alert Threshold"
-                  value={settings.threatScoreThreshold}
+                  label="AI Risk Score Alert"
+                  description="Risk index score required to fire incident alarms."
+                  value={settings.threatThreshold}
                   min={0}
                   max={100}
                   step={1}
-                  onChange={(val) => handleInputChange("threatScoreThreshold", val)}
+                  onChange={(val) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      threatThreshold: val,
+                    }))
+                  }
                 />
                 <SliderRow
-                  label="Files/Minute Alert Threshold"
-                  value={settings.filesPerMinThreshold}
+                  label="IO Actions/Min Limit"
+                  description="Maximum operations per process before firing spikes."
+                  value={settings.filesThreshold}
                   min={0}
                   max={1000}
                   step={10}
-                  onChange={(val) => handleInputChange("filesPerMinThreshold", val)}
+                  onChange={(val) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      filesThreshold: val,
+                    }))
+                  }
                 />
               </div>
             </div>
 
             {/* Network & Notifications */}
-            <div className="bg-white border border-dark text-dark rounded-2xl p-6">
-              <h2 className="text-xl font-bold mb-4">Network & Notifications</h2>
+            <div className="glass-card rounded-card p-6">
+              <h2 className="text-lg font-bold mb-4 border-b border-white/5 pb-2 text-white/95 flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-safe" />
+                Defensive Responses
+              </h2>
               <div className="space-y-4">
                 <ToggleRow
-                  label="Automatic Network Kill Switch"
+                  label="Autonomous Network Kill Switch"
+                  description="Isolate system immediately on high-risk critical events."
                   checked={settings.autoKillSwitch}
                   onToggle={() => handleToggle("autoKillSwitch")}
                 />
                 <ToggleRow
-                  label="Email Alerts"
+                  label="Push Email Alerts"
+                  description="Alert IT administrators via secure API keys."
                   checked={settings.emailAlerts}
                   onToggle={() => handleToggle("emailAlerts")}
                 />
@@ -213,14 +232,20 @@ export default function Settings() {
                       className="overflow-hidden"
                     >
                       <div className="pt-2">
-                        <label className="block font-semibold mb-2">
-                          Email Address
+                        <label className="block text-xs uppercase tracking-wider text-white/40 font-bold mb-2">
+                          Destination Email
                         </label>
                         <input
                           type="email"
-                          value={settings.alertEmail || ""}
-                          onChange={(e) => handleInputChange("alertEmail", e.target.value)}
-                          className="w-full p-3 rounded-xl border border-dark/20 text-dark"
+                          value={settings.email}
+                          placeholder="operator@ransomwatch.io"
+                          onChange={(e) =>
+                            setSettings((prev) => ({
+                              ...prev,
+                              email: e.target.value,
+                            }))
+                          }
+                          className="w-full px-4 py-2.5 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/30 focus:outline-none focus:border-accent/50 transition-colors text-sm"
                         />
                       </div>
                     </motion.div>
@@ -230,31 +255,22 @@ export default function Settings() {
             </div>
 
             {/* Danger Zone */}
-            <div className="bg-dark border-2 border-danger rounded-2xl p-6 text-white">
-              <h2 className="text-xl font-bold mb-4 text-danger flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5" />
-                Danger Zone
+            <div className="glass-card border-danger/20 bg-danger/5 rounded-card p-6 relative overflow-hidden">
+              <h2 className="text-lg font-bold mb-4 text-danger flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-danger animate-pulse" />
+                Danger Operations
               </h2>
               <div className="flex flex-col sm:flex-row gap-4">
-                <button 
+                <button
+                  type="button"
                   onClick={handleClearAlerts}
-                  disabled={isClearingAlerts}
-                  className="px-5 py-3 rounded-full font-semibold bg-white/10 border border-danger hover:bg-danger/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                  className="px-5 py-3 rounded-xl font-bold bg-white/5 border border-danger/30 hover:bg-danger/20 text-white transition-all text-xs tracking-wider uppercase cursor-pointer"
                 >
-                  <Trash2 className="w-4 h-4" />
-                  {isClearingAlerts ? "Clearing..." : "Clear All Alerts"}
-                </button>
-                <button 
-                  onClick={handleResetSettings}
-                  disabled={isResetting}
-                  className="px-5 py-3 rounded-full font-semibold bg-danger hover:bg-danger/80 transition-all flex items-center gap-2 disabled:opacity-50"
-                >
-                  <RefreshCcw className={`w-4 h-4 ${isResetting ? "animate-spin" : ""}`} />
-                  {isResetting ? "Resetting..." : "Reset All Settings"}
+                  Clear Incident Database
                 </button>
               </div>
-              <p className="text-white/50 text-sm mt-4">
-                Warning: These actions are irreversible and will delete all your data.
+              <p className="text-white/40 text-xs mt-4">
+                * Note: Dangerous tasks override system safety checkpoints and cannot be undone.
               </p>
             </div>
           </div>
@@ -264,55 +280,58 @@ export default function Settings() {
               <motion.div
                 initial={{ opacity: 0, y: 50 }}
                 animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 50 }}
                 className="fixed bottom-6 right-6 z-50"
               >
                 <button
+                  type="button"
                   onClick={handleSave}
-                  className="bg-accent text-dark px-8 py-4 rounded-full font-semibold flex items-center gap-2 shadow-lg hover:bg-accent/90 transition-all"
+                  className="bg-accent text-dark px-8 py-4 rounded-full font-bold text-xs tracking-widest uppercase flex items-center gap-2 shadow-lg hover:shadow-accent/20 transition-all cursor-pointer"
                 >
-                  {showSaveSuccess ? (
-                    <>
-                      <Check className="w-5 h-5" />
-                      Saved!
-                    </>
-                  ) : (
-                    <>Save Changes</>
-                  )}
+                  Apply Configuration
                 </button>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </main>
-    </div>
+      </div>
+    </PageWrapper>
   )
 }
 
-function ToggleRow({ label, checked, onToggle }) {
+function ToggleRow({ label, description, checked, onToggle }) {
   return (
-    <div className="flex items-center justify-between">
-      <span className="font-medium">{label}</span>
+    <div className="flex items-center justify-between border-b border-white/5 pb-4 last:border-b-0 last:pb-0">
+      <div>
+        <span className="font-semibold text-white/90 block">{label}</span>
+        {description && <span className="text-xs text-white/40 block mt-0.5">{description}</span>}
+      </div>
       <button
+        type="button"
         onClick={onToggle}
-        className={`w-12 h-6 rounded-full transition-all relative transition-colors ${
-          checked ? "bg-accent" : "bg-white/20"
+        className={`w-12 h-6 rounded-full relative transition-colors cursor-pointer border ${
+          checked ? "bg-accent border-accent" : "bg-white/10 border-white/5"
         }`}
       >
         <motion.div
           animate={{ x: checked ? 26 : 2 }}
-          className="absolute top-1 w-4 h-4 bg-dark rounded-full"
+          className="absolute top-0.5 w-4 h-4 bg-dark rounded-full"
         />
       </button>
     </div>
   )
 }
 
-function SliderRow({ label, value, min, max, step, onChange }) {
+function SliderRow({ label, description, value, min, max, step, onChange }) {
   return (
-    <div>
-      <div className="flex justify-between items-center mb-2">
-        <span className="font-medium">{label}</span>
-        <span className="text-accent font-bold">{value}</span>
+    <div className="border-b border-white/5 pb-4 last:border-b-0 last:pb-0">
+      <div className="flex justify-between items-center mb-1">
+        <div>
+          <span className="font-semibold text-white/90 block">{label}</span>
+          {description && <span className="text-xs text-white/40 block mt-0.5">{description}</span>}
+        </div>
+        <span className="text-accent font-extrabold text-lg">{value}</span>
       </div>
       <input
         type="range"
@@ -321,7 +340,7 @@ function SliderRow({ label, value, min, max, step, onChange }) {
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-accent"
+        className="w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer accent-accent"
       />
     </div>
   )

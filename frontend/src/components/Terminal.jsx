@@ -14,23 +14,32 @@ const terminalLines = [
 
 export default function Terminal() {
   const [visibleLines, setVisibleLines] = useState([])
+  const [resetKey, setResetKey] = useState(0)
 
   useEffect(() => {
     let index = 0
+    let timeoutId = null
     const interval = setInterval(() => {
       if (index < terminalLines.length) {
-        setVisibleLines((prev) => [...prev, terminalLines[index]])
+        const currentLine = terminalLines[index]
+        if (currentLine) {
+          setVisibleLines((prev) => [...prev, currentLine])
+        }
         index++
       } else {
-        setTimeout(() => {
+        clearInterval(interval)
+        timeoutId = setTimeout(() => {
           setVisibleLines([])
-          index = 0
+          setResetKey((prev) => prev + 1)
         }, 3000)
       }
     }, 400)
 
-    return () => clearInterval(interval)
-  }, [])
+    return () => {
+      clearInterval(interval)
+      if (timeoutId) clearTimeout(timeoutId)
+    }
+  }, [resetKey])
 
   const getLineColor = (type) => {
     switch (type) {
@@ -58,15 +67,15 @@ export default function Terminal() {
       </div>
       <div className="p-4 font-mono text-sm">
         <div className="space-y-1 min-h-[200px]">
-          {visibleLines.filter(Boolean).map((line, index) => (
+          {visibleLines.map((line, index) => line && (
             <motion.div
               key={index}
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.3 }}
-              className={getLineColor(line?.type || "info")}
+              className={getLineColor(line.type)}
             >
-              {line?.text || ""}
+              {line.text}
             </motion.div>
           ))}
           <motion.span

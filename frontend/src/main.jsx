@@ -5,6 +5,8 @@ import { ClerkProvider } from "@clerk/clerk-react"
 import "./index.css"
 import App from "./App.jsx"
 
+import { ToastProvider } from "./context/ToastContext.jsx"
+
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || ""
 const IS_CLERK_ENABLED = PUBLISHABLE_KEY && !PUBLISHABLE_KEY.includes("placeholder")
 
@@ -15,14 +17,18 @@ const AppWrapper = () => {
     return (
       <ClerkProvider publishableKey={PUBLISHABLE_KEY}>
         <QueryClientProvider client={queryClient}>
-          <App />
+          <ToastProvider>
+            <App />
+          </ToastProvider>
         </QueryClientProvider>
       </ClerkProvider>
     )
   }
   return (
     <QueryClientProvider client={queryClient}>
-      <App />
+      <ToastProvider>
+        <App />
+      </ToastProvider>
     </QueryClientProvider>
   )
 }

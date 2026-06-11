@@ -1,7 +1,10 @@
 import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { Shield, LayoutDashboard, Bell, Cpu, Circle, Zap, Upload, FileQuestion, AlertTriangle, CheckCircle2, XCircle } from "lucide-react"
+import { Shield, Bell, Cpu, Zap, Activity } from "lucide-react"
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts"
 import Sidebar from "../components/Sidebar"
+import Topbar from "../components/Topbar"
+import PageWrapper from "../components/PageWrapper"
 import StatCard from "../components/StatCard"
 import ThreatMeter from "../components/ThreatMeter"
 import FileEventFeed from "../components/FileEventFeed"
@@ -15,33 +18,33 @@ import {
   mockCanaryFiles,
 } from "../data/mockData"
 
-// 计算文件熵值的函数
-function calculateEntropy(data) {
-  if (data.length === 0) return 0
-  const freq = new Map()
-  for (let i = 0; i < data.length; i++) {
-    const byte = data[i]
-    freq.set(byte, (freq.get(byte) || 0) + 1)
-  }
-  
-  let entropy = 0
-  const len = data.length
-  for (const count of freq.values()) {
-    const prob = count / len
-    entropy -= prob * Math.log2(prob)
-  }
-  return entropy
-}
+const realTimeActivityData = [
+  { name: "10:00", entropy: 3.4, systemIO: 180 },
+  { name: "10:05", entropy: 4.1, systemIO: 240 },
+  { name: "10:10", entropy: 3.9, systemIO: 190 },
+  { name: "10:15", entropy: 7.6, systemIO: 820 },
+  { name: "10:20", entropy: 6.8, systemIO: 650 },
+  { name: "10:25", entropy: 4.2, systemIO: 290 },
+]
 
 export default function Dashboard() {
   const [threatScore, setThreatScore] = useState(mockStats.threatScore)
   const [fileEvents, setFileEvents] = useState(mockFileEvents)
   const [isMonitoringActive, setIsMonitoringActive] = useState(true)
   const [networkConnected, setNetworkConnected] = useState(true)
-  const [uploadedFile, setUploadedFile] = useState(null)
-  const [fileResult, setFileResult] = useState(null)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const [dragOver, setDragOver] = useState(false)
+
+  // Listen to sidebar collapsible state
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    localStorage.getItem("sidebar-collapsed") === "true"
+  )
+
+  useEffect(() => {
+    const handleToggle = () => {
+      setSidebarCollapsed(localStorage.getItem("sidebar-collapsed") === "true")
+    }
+    window.addEventListener("sidebar-toggle", handleToggle)
+    return () => window.removeEventListener("sidebar-toggle", handleToggle)
+  }, [])
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -80,310 +83,147 @@ export default function Dashboard() {
     return () => clearInterval(interval)
   }, [])
 
-  // 处理文件上传
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0]
-    if (file) {
-      analyzeFile(file)
-    }
-  }
-
-  // 处理拖放
-  const handleDrop = (e) => {
-    e.preventDefault()
-    setDragOver(false)
-    const file = e.dataTransfer.files[0]
-    if (file) {
-      analyzeFile(file)
-    }
-  }
-
-  // 分析文件
-  const analyzeFile = (file) => {
-    setUploadedFile(file)
-    setIsAnalyzing(true)
-    setFileResult(null)
-
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const arrayBuffer = e.target.result
-      const data = new Uint8Array(arrayBuffer)
-      const entropy = calculateEntropy(data)
-      
-      // 计算风险等级
-      let riskLevel = "low"
-      let riskScore = 0
-      let riskMessage = "File appears normal"
-
-      const isCommonCompressed = /\.(zip|7z|rar|jpg|jpeg|png|gif|pdf|docx|xlsx|pptx|exe|dll|sys)$/i.test(file.name)
-
-      if (entropy > 7.98) {
-        riskLevel = "critical"
-        riskScore = 98
-        riskMessage = "CRITICAL: Maximum entropy detected. This is almost certainly encrypted data typical of ransomware."
-      } else if (entropy > 7.92) {
-        riskLevel = "high"
-        riskScore = 75
-        riskMessage = isCommonCompressed 
-          ? "Suspicious: Very high entropy for this file type. Unusual even for compressed data."
-          : "High Risk: High entropy detected in a non-standard format. Highly suspicious."
-      } else if (entropy > 7.5) {
-        riskLevel = "medium"
-        riskScore = 35
-        riskMessage = "Safe/Normal: High entropy typical for modern high-compression formats and media."
-      } else {
-        riskLevel = "low"
-        riskScore = 5
-        riskMessage = "Safe: Standard entropy level for documents, code, and uncompressed data."
-      }
-
-      // Re-adjusting riskLevel for UI consistency based on score
-      if (riskScore >= 90) riskLevel = "critical"
-      else if (riskScore >= 70) riskLevel = "high"
-      else if (riskScore >= 30) riskLevel = "medium"
-      else riskLevel = "low"
-
-      setFileResult({
-        fileName: file.name,
-        fileSize: (file.size / 1024).toFixed(2),
-        fileType: file.type || "Unknown",
-        entropy: entropy.toFixed(2),
-        riskLevel,
-        riskScore,
-        riskMessage,
-        isEncrypted: entropy > 7.0,
-      })
-      
-      setIsAnalyzing(false)
-    }
-
-    reader.readAsArrayBuffer(file.slice(0, Math.min(file.size, 1000000))) // 只分析前1MB
-  }
-
-  // 重置检测
-  const resetDetection = () => {
-    setUploadedFile(null)
-    setFileResult(null)
-  }
-
   return (
-    <div className="min-h-screen bg-dark text-white flex">
+    <PageWrapper>
+      <div className="min-h-screen bg-[#0b0c10] text-white flex relative overflow-hidden font-sans">
+        {/* Ambient Cyber Glows */}
+        <div className="cyber-glow bg-accent/5 w-[500px] h-[500px] top-[-150px] left-[-150px]" />
+        <div className="cyber-glow bg-danger/5 w-[500px] h-[500px] bottom-[-150px] right-[-150px]" />
+        <div className="absolute inset-0 cyber-grid pointer-events-none" />
+
       <Sidebar />
-      <main className="flex-1 md:ml-64 pb-24 md:pb-10">
+      
+      {/* Dynamic margins based on Sidebar collapsible state */}
+      <main 
+        className={`flex-1 pb-24 md:pb-10 relative z-10 transition-all duration-300 ${
+          sidebarCollapsed ? "md:ml-20" : "md:ml-64"
+        }`}
+      >
+        {/* Sticky Topbar */}
+        <Topbar isMonitoringActive={isMonitoringActive} />
+
         <div className="p-6 md:p-8">
-          {/* Top Bar */}
+          {/* Header Bar */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
             <div>
-              <h1 className="text-3xl font-bold mb-1">Good morning 👋</h1>
-              <p className="text-white/60">Your system is currently protected</p>
+              <h1 className="text-3xl font-extrabold mb-1 tracking-wide bg-gradient-to-r from-white via-white/95 to-white/60 bg-clip-text text-transparent">
+                Security Operations Center
+              </h1>
+              <p className="text-white/50 text-sm">System telemetry monitoring and proactive ransomware detection.</p>
             </div>
+            
             <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-4 py-2 rounded-full">
-                <motion.div
-                  animate={{ scale: [1, 1.2, 1] }}
-                  transition={{ duration: 1.5, repeat: Infinity }}
-                >
-                  <Circle
-                    className={`w-3 h-3 fill-${
-                      isMonitoringActive ? "safe" : "warning"
-                    } text-${isMonitoringActive ? "safe" : "warning"}`}
-                  />
-                </motion.div>
-                <span className="font-semibold">
-                  {isMonitoringActive ? "Monitoring Active" : "Monitoring Paused"}
-                </span>
-              </div>
               <button
                 onClick={() => setIsMonitoringActive(!isMonitoringActive)}
-                className={`px-5 py-2 rounded-full font-semibold transition-all ${
+                className={`px-5 py-2.5 rounded-full font-bold text-xs tracking-widest uppercase transition-all shadow-lg cursor-pointer ${
                   isMonitoringActive
-                    ? "bg-danger text-white hover:bg-danger/90"
-                    : "bg-safe text-dark hover:bg-safe/90"
+                    ? "bg-danger text-white hover:bg-danger/90 shadow-danger/10 hover:shadow-danger/20"
+                    : "bg-safe text-dark hover:bg-safe/90 shadow-safe/10 hover:shadow-safe/20"
                 }`}
               >
-                {isMonitoringActive ? "Stop Monitoring" : "Start Monitoring"}
+                {isMonitoringActive ? "Pause Heuristics" : "Resume Heuristics"}
               </button>
             </div>
           </div>
 
-          {/* File Detection Section */}
-          <div className="mb-8 bg-white/5 border border-white/10 rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-6">
-              <FileQuestion className="w-8 h-8 text-accent" />
-              <div>
-                <h2 className="text-2xl font-bold">File Detection</h2>
-                <p className="text-white/60">Upload any file to check for ransomware signs</p>
-              </div>
-            </div>
-
-            {!uploadedFile ? (
-              <div
-                className={`border-2 border-dashed rounded-xl p-12 text-center transition-all ${
-                  dragOver 
-                    ? "border-accent bg-accent/10" 
-                    : "border-white/20 hover:border-white/40"
-                }`}
-                onDragOver={(e) => {
-                  e.preventDefault()
-                  setDragOver(true)
-                }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
-              >
-                <Upload className="w-16 h-16 text-accent mx-auto mb-4" />
-                <h3 className="text-xl font-semibold mb-2">Drop file here or click to upload</h3>
-                <p className="text-white/60 mb-4">
-                  Supports all file types - checks for high entropy (encrypted files)
-                </p>
-                <input
-                  type="file"
-                  id="file-upload"
-                  className="hidden"
-                  onChange={handleFileUpload}
-                />
-                <label
-                  htmlFor="file-upload"
-                  className="inline-block bg-accent text-dark px-6 py-3 rounded-full font-semibold cursor-pointer hover:bg-accent/90 transition-all"
-                >
-                  Choose File
-                </label>
-              </div>
-            ) : (
-              <div>
-                {/* File Info */}
-                <div className="flex items-center justify-between mb-6">
-                  <div>
-                    <h3 className="font-semibold text-lg">{uploadedFile.name}</h3>
-                    <p className="text-white/60">
-                      {(uploadedFile.size / 1024).toFixed(2)} KB
-                    </p>
-                  </div>
-                  <button
-                    onClick={resetDetection}
-                    className="text-white/60 hover:text-white transition-colors"
-                  >
-                    <XCircle className="w-6 h-6" />
-                  </button>
-                </div>
-
-                {/* Analysis Result */}
-                {isAnalyzing ? (
-                  <div className="text-center py-8">
-                    <motion.div
-                      animate={{ rotate: 360 }}
-                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
-                      className="inline-block"
-                    >
-                      <Zap className="w-12 h-12 text-accent" />
-                    </motion.div>
-                    <p className="mt-4 text-white/70">Analyzing file...</p>
-                  </div>
-                ) : fileResult ? (
-                  <div className="space-y-6">
-                    {/* Risk Level */}
-                    <div className={`rounded-xl p-6 ${
-                      fileResult.riskLevel === "critical" 
-                        ? "bg-danger/20 border border-danger/50"
-                        : fileResult.riskLevel === "high"
-                        ? "bg-orange-500/20 border border-orange-500/50"
-                        : fileResult.riskLevel === "medium"
-                        ? "bg-yellow-500/20 border border-yellow-500/50"
-                        : "bg-safe/20 border border-safe/50"
-                    }`}>
-                      <div className="flex items-center gap-3 mb-3">
-                        {fileResult.riskLevel === "critical" || fileResult.riskLevel === "high" ? (
-                          <AlertTriangle className="w-8 h-8 text-danger" />
-                        ) : fileResult.riskLevel === "medium" ? (
-                          <AlertTriangle className="w-8 h-8 text-yellow-500" />
-                        ) : (
-                          <CheckCircle2 className="w-8 h-8 text-safe" />
-                        )}
-                        <h4 className="text-xl font-bold">
-                          {fileResult.riskLevel === "critical" ? "CRITICAL RISK!" :
-                           fileResult.riskLevel === "high" ? "High Risk" :
-                           fileResult.riskLevel === "medium" ? "Medium Risk" : "No Risk Detected"}
-                        </h4>
-                      </div>
-                      <p className="text-lg">{fileResult.riskMessage}</p>
-                    </div>
-
-                    {/* Detailed Metrics */}
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-white/5 rounded-xl p-4">
-                        <p className="text-white/60 text-sm mb-1">Entropy Score</p>
-                        <p className="text-3xl font-bold">{fileResult.entropy}</p>
-                        <p className="text-xs text-white/40 mt-1">
-                          (Normal: &lt; 7.0, Suspicious: &gt; 7.0)
-                        </p>
-                      </div>
-                      <div className="bg-white/5 rounded-xl p-4">
-                        <p className="text-white/60 text-sm mb-1">Risk Score</p>
-                        <p className={`text-3xl font-bold ${
-                          fileResult.riskLevel === "critical" 
-                            ? "text-danger"
-                            : fileResult.riskLevel === "high"
-                            ? "text-orange-500"
-                            : fileResult.riskLevel === "medium"
-                            ? "text-yellow-500"
-                            : "text-safe"
-                        }`}>{fileResult.riskScore}/100</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
-
-          {/* Stats Row */}
+          {/* Stat Cards Row */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatCard
-              title="Files Monitored"
+              title="Protected Files"
               value={mockStats.filesMonitored.toLocaleString()}
               icon={Shield}
               cardType="white"
             />
             <StatCard
-              title="Threat Score"
-              value={`${threatScore}/100`}
+              title="Threat Index"
+              value={`${threatScore}%`}
               icon={Zap}
               cardType="green"
             />
             <StatCard
-              title="Active Processes"
+              title="Monitored Processes"
               value={mockStats.activeProcesses}
               icon={Cpu}
               cardType="dark"
             />
             <StatCard
-              title="Alerts Today"
+              title="Alerts Resolved"
               value={mockStats.alertsToday}
               icon={Bell}
-              cardType="white"
+              cardType="danger"
             />
           </div>
 
-          {/* Main Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            <div className="space-y-6">
-              <ThreatMeter score={threatScore} />
-              <FileEventFeed events={fileEvents} />
+          {/* Interactive Chart & Live Matrix Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            {/* Live Chart Widget */}
+            <div className="lg:col-span-2 glass-card rounded-card p-6 flex flex-col justify-between">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-white/80 font-bold text-lg tracking-wide">Threat Ingestion Trends</h3>
+                  <p className="text-white/40 text-xs mt-0.5">Real-time entropy levels compared with system file I/O operations.</p>
+                </div>
+                <Activity className="w-5 h-5 text-accent animate-pulse" />
+              </div>
+
+              {/* Chart container */}
+              <div className="h-56 w-full mt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={realTimeActivityData} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="glowEntropy" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#B5FF4D" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="#B5FF4D" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff03" />
+                    <XAxis dataKey="name" stroke="#ffffff30" fontSize={10} tickLine={false} />
+                    <YAxis stroke="#ffffff30" fontSize={10} tickLine={false} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "#12131a",
+                        borderColor: "rgba(255,255,255,0.08)",
+                        borderRadius: "8px",
+                      }}
+                    />
+                    <Area
+                      name="Entropy Spike"
+                      type="monotone"
+                      dataKey="entropy"
+                      stroke="#B5FF4D"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#glowEntropy)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
+
+            {/* Threat Dial Component */}
+            <ThreatMeter score={threatScore} />
+          </div>
+
+          {/* Canary Files & Kill Switch Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <CanaryStatus canaryFiles={mockCanaryFiles} />
             <div className="space-y-6">
-              <CanaryStatus canaryFiles={mockCanaryFiles} />
               <NetworkStatus
                 isConnected={networkConnected}
                 onToggle={() => setNetworkConnected(!networkConnected)}
               />
+              <FileEventFeed events={fileEvents} />
             </div>
           </div>
 
-          {/* Process Table */}
+          {/* Process Table Grid */}
           <div className="w-full">
             <ProcessTable processes={mockProcesses} />
           </div>
+
         </div>
       </main>
-    </div>
+      </div>
+    </PageWrapper>
   )
 }
