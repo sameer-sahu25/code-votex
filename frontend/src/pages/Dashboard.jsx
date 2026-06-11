@@ -17,16 +17,17 @@ import {
 
 // 计算文件熵值的函数
 function calculateEntropy(data) {
-  const freq = {}
+  if (data.length === 0) return 0
+  const freq = new Map()
   for (let i = 0; i < data.length; i++) {
     const byte = data[i]
-    freq[byte] = (freq[byte] || 0) + 1
+    freq.set(byte, (freq.get(byte) || 0) + 1)
   }
   
   let entropy = 0
   const len = data.length
-  for (const byte in freq) {
-    const prob = freq[byte] / len
+  for (const count of freq.values()) {
+    const prob = count / len
     entropy -= prob * Math.log2(prob)
   }
   return entropy
@@ -117,19 +118,19 @@ export default function Dashboard() {
       if (entropy > 7.5) {
         riskLevel = "critical"
         riskScore = 90
-        riskMessage = "HIGH RISK: File appears to be encrypted (ransomware detected!)"
+        riskMessage = "HIGH RISK: File appears to be encrypted (ransomware detected!). High entropy values are characteristic of encrypted or compressed data."
       } else if (entropy > 7.0) {
         riskLevel = "high"
         riskScore = 70
-        riskMessage = "Suspicious: High entropy detected - possible encryption"
-      } else if (entropy > 6.0) {
+        riskMessage = "Suspicious: High entropy detected - possible encryption. This is common in packed executables or encrypted archives."
+      } else if (entropy > 5.0) {
         riskLevel = "medium"
         riskScore = 40
-        riskMessage = "Moderate: Elevated entropy level"
+        riskMessage = "Moderate: Elevated entropy level. Typical for some compressed formats or media files."
       } else {
         riskLevel = "low"
         riskScore = 10
-        riskMessage = "Safe: Normal entropy level"
+        riskMessage = "Safe: Normal entropy level. Typical for text files and standard documents."
       }
 
       setFileResult({

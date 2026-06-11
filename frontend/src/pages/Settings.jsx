@@ -1,34 +1,88 @@
 import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
-import { Check } from "lucide-react"
+import { Check, AlertTriangle, Trash2, RefreshCcw } from "lucide-react"
 import Sidebar from "../components/Sidebar"
+import api from "../lib/api"
 
 export default function Settings() {
   const [settings, setSettings] = useState({
-    enableMonitoring: true,
-    enableCanary: true,
-    autoStart: false,
+    autoStartMonitoring: true,
     entropyThreshold: 7.0,
-    threatThreshold: 80,
-    filesThreshold: 200,
+    threatScoreThreshold: 80,
+    filesPerMinThreshold: 200,
     autoKillSwitch: true,
     emailAlerts: false,
-    email: "",
-    watchDirs: "C:\\Users\\test\\Documents, C:\\Users\\test\\Desktop",
-    canaryPerDir: 5,
+    alertEmail: "",
+    watchDirectories: [],
+    canaryFilesPerDir: 5,
   })
 
+  const [loading, setLoading] = useState(true)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [showSaveSuccess, setShowSaveSuccess] = useState(false)
+  const [isClearingAlerts, setIsClearingAlerts] = useState(false)
+  const [isResetting, setIsResetting] = useState(false)
 
   useEffect(() => {
-    setHasUnsavedChanges(true)
-  }, [settings])
+    fetchSettings()
+  }, [])
 
-  const handleSave = () => {
-    setShowSaveSuccess(true)
-    setHasUnsavedChanges(false)
-    setTimeout(() => setShowSaveSuccess(false), 3000)
+  const fetchSettings = async () => {
+    try {
+      const data = await api.get("/settings")
+      if (data) {
+        setSettings({
+          ...data,
+          watchDirectories: data.watchDirectories || [],
+        })
+      }
+    } catch (error) {
+      console.error("Failed to fetch settings:", error)
+    } finally {
+      setLoading(false)
+      setHasUnsavedChanges(false)
+    }
+  }
+
+  const handleSave = async () => {
+    try {
+      await api.put("/settings", settings)
+      setShowSaveSuccess(true)
+      setHasUnsavedChanges(false)
+      setTimeout(() => setShowSaveSuccess(false), 3000)
+    } catch (error) {
+      console.error("Failed to save settings:", error)
+    }
+  }
+
+  const handleClearAlerts = async () => {
+    if (!confirm("Are you sure you want to clear all alerts? This cannot be undone.")) return
+    
+    setIsClearingAlerts(true)
+    try {
+      await api.delete("/alerts/clear")
+      alert("All alerts have been cleared.")
+    } catch (error) {
+      console.error("Failed to clear alerts:", error)
+    } finally {
+      setIsClearingAlerts(false)
+    }
+  }
+
+  const handleResetSettings = async () => {
+    if (!confirm("Are you sure you want to reset all settings to defaults?")) return
+
+    setIsResetting(true)
+    try {
+      const data = await api.post("/settings/reset")
+      setSettings(data)
+      setHasUnsavedChanges(false)
+      alert("Settings have been reset to defaults.")
+    } catch (error) {
+      console.error("Failed to reset settings:", error)
+    } finally {
+      setIsResetting(false)
+    }
   }
 
   const handleToggle = (key) => {
@@ -36,6 +90,23 @@ export default function Settings() {
       ...prev,
       [key]: !prev[key],
     }))
+    setHasUnsavedChanges(true)
+  }
+
+  const handleInputChange = (key, value) => {
+    setSettings((prev) => ({
+      ...prev,
+      [key]: value,
+    }))
+    setHasUnsavedChanges(true)
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-dark text-white flex items-center justify-center">
+        <RefreshCcw className="w-8 h-8 animate-spin text-accent" />
+      </div>
+    )
   }
 
   return (
@@ -54,34 +125,22 @@ export default function Settings() {
               <h2 className="text-xl font-bold mb-4">Monitoring Settings</h2>
               <div className="space-y-4">
                 <ToggleRow
-                  label="Enable File Monitoring"
-                  checked={settings.enableMonitoring}
-                  onToggle={() => handleToggle("enableMonitoring")}
-                />
-                <ToggleRow
-                  label="Enable Canary Files"
-                  checked={settings.enableCanary}
-                  onToggle={() => handleToggle("enableCanary")}
-                />
-                <ToggleRow
-                  label="Auto-start on System Boot"
-                  checked={settings.autoStart}
-                  onToggle={() => handleToggle("autoStart")}
+                  label="Auto-start Monitoring"
+                  checked={settings.autoStartMonitoring}
+                  onToggle={() => handleToggle("autoStartMonitoring")}
                 />
                 <div className="pt-2">
                   <label className="block font-semibold mb-2">
-                    Directories to Watch
+                    Directories to Watch (comma separated)
                   </label>
                   <textarea
-                    value={settings.watchDirs}
+                    value={settings.watchDirectories.join(", ")}
                     onChange={(e) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        watchDirs: e.target.value,
-                      }))
+                      handleInputChange("watchDirectories", e.target.value.split(",").map(s => s.trim()).filter(Boolean))
                     }
                     className="w-full p-3 rounded-xl border border-dark/20 text-dark bg-white"
                     rows={3}
+                    placeholder="C:\Path\To\Watch, D:\Another\Path"
                   />
                 </div>
                 <div>
@@ -90,12 +149,9 @@ export default function Settings() {
                   </label>
                   <input
                     type="number"
-                    value={settings.canaryPerDir}
+                    value={settings.canaryFilesPerDir}
                     onChange={(e) =>
-                      setSettings((prev) => ({
-                        ...prev,
-                        canaryPerDir: parseInt(e.target.value) || 0,
-                      }))
+                      handleInputChange("canaryFilesPerDir", parseInt(e.target.value) || 0)
                     }
                     className="w-full p-3 rounded-xl border border-dark/20 text-dark"
                   />
@@ -113,38 +169,23 @@ export default function Settings() {
                   min={0}
                   max={8}
                   step={0.1}
-                  onChange={(val) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      entropyThreshold: val,
-                    }))
-                  }
+                  onChange={(val) => handleInputChange("entropyThreshold", val)}
                 />
                 <SliderRow
                   label="Threat Score Alert Threshold"
-                  value={settings.threatThreshold}
+                  value={settings.threatScoreThreshold}
                   min={0}
                   max={100}
                   step={1}
-                  onChange={(val) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      threatThreshold: val,
-                    }))
-                  }
+                  onChange={(val) => handleInputChange("threatScoreThreshold", val)}
                 />
                 <SliderRow
                   label="Files/Minute Alert Threshold"
-                  value={settings.filesThreshold}
+                  value={settings.filesPerMinThreshold}
                   min={0}
                   max={1000}
                   step={10}
-                  onChange={(val) =>
-                    setSettings((prev) => ({
-                      ...prev,
-                      filesThreshold: val,
-                    }))
-                  }
+                  onChange={(val) => handleInputChange("filesPerMinThreshold", val)}
                 />
               </div>
             </div>
@@ -177,13 +218,8 @@ export default function Settings() {
                         </label>
                         <input
                           type="email"
-                          value={settings.email}
-                          onChange={(e) =>
-                            setSettings((prev) => ({
-                              ...prev,
-                              email: e.target.value,
-                            }))
-                          }
+                          value={settings.alertEmail || ""}
+                          onChange={(e) => handleInputChange("alertEmail", e.target.value)}
                           className="w-full p-3 rounded-xl border border-dark/20 text-dark"
                         />
                       </div>
@@ -195,13 +231,26 @@ export default function Settings() {
 
             {/* Danger Zone */}
             <div className="bg-dark border-2 border-danger rounded-2xl p-6 text-white">
-              <h2 className="text-xl font-bold mb-4 text-danger">Danger Zone</h2>
+              <h2 className="text-xl font-bold mb-4 text-danger flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5" />
+                Danger Zone
+              </h2>
               <div className="flex flex-col sm:flex-row gap-4">
-                <button className="px-5 py-3 rounded-full font-semibold bg-white/10 border border-danger hover:bg-danger/20 transition-all">
-                  Clear All Alerts
+                <button 
+                  onClick={handleClearAlerts}
+                  disabled={isClearingAlerts}
+                  className="px-5 py-3 rounded-full font-semibold bg-white/10 border border-danger hover:bg-danger/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  {isClearingAlerts ? "Clearing..." : "Clear All Alerts"}
                 </button>
-                <button className="px-5 py-3 rounded-full font-semibold bg-danger hover:bg-danger/80 transition-all">
-                  Reset All Settings
+                <button 
+                  onClick={handleResetSettings}
+                  disabled={isResetting}
+                  className="px-5 py-3 rounded-full font-semibold bg-danger hover:bg-danger/80 transition-all flex items-center gap-2 disabled:opacity-50"
+                >
+                  <RefreshCcw className={`w-4 h-4 ${isResetting ? "animate-spin" : ""}`} />
+                  {isResetting ? "Resetting..." : "Reset All Settings"}
                 </button>
               </div>
               <p className="text-white/50 text-sm mt-4">
